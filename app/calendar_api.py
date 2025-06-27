@@ -28,9 +28,8 @@ def get_available_slots(date: str, duration: int = 60):
         service = get_calendar_service()
         ist = timezone('Asia/Kolkata')
         start_date = datetime.datetime.strptime(date, '%Y-%m-%d').replace(tzinfo=ist)
-        end_date = start_date + datetime.timedelta(days=1)
-        start_time = start_date.replace(hour=9, minute=0, tzinfo=ist).astimezone(utc).isoformat() + 'Z'
-        end_time = start_date.replace(hour=17, minute=0, tzinfo=ist).astimezone(utc).isoformat() + 'Z'
+        start_time = start_date.replace(hour=9, minute=0, tzinfo=ist).isoformat()
+        end_time = start_date.replace(hour=17, minute=0, tzinfo=ist).isoformat()
 
         events_result = service.events().list(
             calendarId='primary',
@@ -43,21 +42,23 @@ def get_available_slots(date: str, duration: int = 60):
 
         available_slots = []
         current_time = start_date.replace(hour=9, minute=0, tzinfo=ist)
-        while current_time < start_date.replace(hour=17, minute=0, tzinfo=ist):
+        end_of_day = start_date.replace(hour=17, minute=0, tzinfo=ist)
+
+        while current_time < end_of_day:
             slot_end = current_time + datetime.timedelta(minutes=duration)
             is_available = True
             for event in events:
-                event_start = datetime.datetime.fromisoformat(event['start']['dateTime'].replace('Z', '+00:00')).replace(tzinfo=utc).astimezone(ist)
-                event_end = datetime.datetime.fromisoformat(event['end']['dateTime'].replace('Z', '+00:00')).replace(tzinfo=utc).astimezone(ist)
+                event_start = datetime.datetime.fromisoformat(event['start']['dateTime'].replace('Z', '')).replace(tzinfo=ist)
+                event_end = datetime.datetime.fromisoformat(event['end']['dateTime'].replace('Z', '')).replace(tzinfo=ist)
                 if not (slot_end <= event_start or current_time >= event_end):
                     is_available = False
                     break
             if is_available:
-                available_slots.append(current_time.strftime('%Y-%m-%d %H:%M'))
+                available_slots.append(current_time.strftime('%H:%M'))
             current_time += datetime.timedelta(minutes=duration)
         return available_slots
-    except Exception as e:
-        return {"error": str(e)}
+    except HttpError as e:
+        return {"error": f"Google Calendar API error: {str(e)}"}
 
 def book_appointment(start_time: str, summary: str, duration: int = 60):
     try:
