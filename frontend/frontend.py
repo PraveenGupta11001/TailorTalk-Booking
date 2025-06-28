@@ -2,23 +2,22 @@ import streamlit as st
 import requests
 import time
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
-# Try getting backend URL from secrets (for deployed environments)
-# BACKEND_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000/chat")
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000/chat")
+# Try backend URL from env first, fallback to localhost
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-def send_to_agent(message):
+def send_message(message):
     try:
         response = requests.post(
-            BACKEND_URL,
-            headers={"Content-Type": "application/json"},
+            f"{BACKEND_URL}/chat",
             json={"message": message},
             timeout=10
         )
-        response.raise_for_status()
-        return response.json().get("responses", ["❌ No response received."])
+        return response.json().get("responses", ["Something went wrong."])
     except Exception as e:
-        return [f"⚠️ Error contacting backend: {str(e)}"]
+        return [f"Error: {str(e)}"]
 
 # UI customization
 st.markdown("""
@@ -72,7 +71,7 @@ if user_input:
         st.write(user_input)
 
     with st.spinner("Thinking..."):
-        responses = send_to_agent(user_input)
+        responses = send_message(user_input)
 
     for res in responses:
         st.session_state.messages.append({"role": "assistant", "content": res})
