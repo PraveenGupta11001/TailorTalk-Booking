@@ -1,6 +1,9 @@
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, List, Optional
 from datetime import datetime, timedelta
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
 import re
 from app.calendar_api import get_available_slots, book_appointment
 from dateutil.parser import parse as parse_date

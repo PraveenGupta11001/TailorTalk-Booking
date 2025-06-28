@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
 from app.agent import run_agent
 from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI()
 
