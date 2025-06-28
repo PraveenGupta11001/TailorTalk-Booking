@@ -95,16 +95,26 @@ def book_appointment(start_time: str, summary: str, duration: int = 60):
         service = get_calendar_service()
         tz = pytz.timezone('Asia/Kolkata')
         
-        # Parse and localize the datetime
+        # Strict time parsing with validation
         try:
             naive_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M')
-            start_dt = tz.localize(naive_dt.replace(second=0, microsecond=0))
+            if not (0 <= naive_dt.hour < 24 and 0 <= naive_dt.minute < 60):
+                return {"error": "Invalid time - must be between 00:00 and 23:59"}
+                
+            start_dt = tz.localize(naive_dt.replace(
+                minute=0,  # Force exact hour
+                second=0,
+                microsecond=0
+            ))
         except ValueError as e:
             return {"error": f"Invalid time format: {str(e)}"}
 
-        end_dt = start_dt + timedelta(minutes=duration)
+        # Calculate end time (strict 1-hour duration)
+        end_dt = start_dt + timedelta(hours=1)  # Changed from minutes=duration for exact hours
 
-        # Create event with proper timezone info
+        # Verify times
+        print(f"DEBUG: Booking from {start_dt} to {end_dt}")  # For verification
+        
         event = {
             'summary': summary,
             'start': {
@@ -120,16 +130,21 @@ def book_appointment(start_time: str, summary: str, duration: int = 60):
             }
         }
 
-        event = service.events().insert(
+        created_event = service.events().insert(
             calendarId='primary',
             body=event
         ).execute()
 
+        # Verify the actual booked times
+        booked_start = datetime.fromisoformat(created_event['start']['dateTime']).astimezone(tz)
+        booked_end = datetime.fromisoformat(created_event['end']['dateTime']).astimezone(tz)
+        
         return {
             "status": "success",
-            "event_id": event.get('id'),
-            "start": start_dt.strftime('%Y-%m-%d %H:%M'),
-            "end": end_dt.strftime('%Y-%m-%d %H:%M')
+            "event_id": created_event.get('id'),
+            "start": booked_start.strftime('%Y-%m-%d %H:%M'),
+            "end": booked_end.strftime('%Y-%m-%d %H:%M'),
+            "duration_hours": (booked_end - booked_start).total_seconds() / 3600
         }
 
     except HttpError as e:
