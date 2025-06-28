@@ -1,28 +1,74 @@
 import streamlit as st
-import requests
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+from app.agent import run_agent
+import time
+
+# Custom CSS for better chat interface
+st.markdown("""
+<style>
+    .stChatMessage {
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+    .assistant-message {
+        background-color: #f0f2f6;
+    }
+    .user-message {
+        background-color: #e3f2fd;
+    }
+    .stTextInput>div>div>input {
+        border-radius: 20px !important;
+        padding: 10px 15px !important;
+    }
+    .stButton>button {
+        border-radius: 20px !important;
+        padding: 10px 20px !important;
+        background-color: #4CAF50 !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 st.title("TailorTalk Booking Agent")
+st.caption("A smart assistant to help you schedule appointments")
 
+# Initialize chat history
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Hi! I'm here to help you book an appointment. When would you like to schedule a meeting?"}]
+    st.session_state.messages = [{
+        "role": "assistant", 
+        "content": "Hi there! 👋 I'm TailorTalk, your personal booking assistant. How can I help you schedule an appointment today?"
+    }]
 
-with st.form(key="chat_form", clear_on_submit=True):
-    user_input = st.text_input("Type your message:", key="user_input")
-    submit_button = st.form_submit_button("Send")
-
-if submit_button and user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    try:
-        response = requests.post("http://localhost:8000/chat", json={"message": user_input})
-        if response.status_code == 200:
-            responses = response.json()["responses"]
-            for resp in responses:
-                st.session_state.messages.append({"role": "assistant", "content": resp})
-        else:
-            st.session_state.messages.append({"role": "assistant", "content": f"Error: Could not connect to the backend. Status code: {response.status_code}"})
-    except Exception as e:
-        st.session_state.messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
-
+# Display chat messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
+
+# Chat input
+user_input = st.chat_input("Type your message here...")
+
+if user_input:
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    
+    # Display user message immediately
+    with st.chat_message("user"):
+        st.write(user_input)
+    
+    # Get assistant response
+    with st.spinner("Thinking..."):
+        responses = run_agent(user_input)
+    
+    # Add assistant responses to chat history
+    for response in responses:
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        # Display assistant response
+        with st.chat_message("assistant"):
+            st.write(response)
+        
+        # Small delay between messages for natural flow
+        time.sleep(0.3)
