@@ -11,7 +11,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://192.168.187.96:8501", '*'],
+    allow_origins=["http://192.168.187.96:8501", 'https://tailortalk-booking.streamlit.app'],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
