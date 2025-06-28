@@ -4,6 +4,7 @@ __init__.py
 
 credentials.json
 notes.ipynb
+
 structure.txt
 # Ignore Python cache files
 __pycache__/
@@ -12,3 +13,8 @@ __pycache__/
 *.pyd
 # Ignore Jupyter Notebook checkpoints      
 token.json
+
+# testing files
+.test_calender_api.py
+.test_calender.py   
+.test_time_parsing.py

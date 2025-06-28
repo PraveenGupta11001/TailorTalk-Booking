@@ -1,43 +1,59 @@
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import datetime
-import os.path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from pytz import timezone
-from datetime import datetime, timedelta
+
+import os
+import json
 import pytz
+from datetime import datetime, timedelta
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def get_calendar_service():
     creds = None
+
+    # Check for token.json (refreshable token)
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+
+    # Refresh or create credentials
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-    return build('calendar', 'v3', credentials=creds)
+            # Check if credentials.json file exists
+            if os.path.exists("credentials.json"):
+                flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            else:
+                # Load from environment variable (Streamlit secrets)
+                raw = os.environ.get("GOOGLE_CREDENTIALS")
+                if not raw:
+                    raise Exception("Google credentials not found in environment or file.")
+                try:
+                    info = json.loads(raw)
+                except json.JSONDecodeError as e:
+                    raise Exception(f"Invalid JSON in GOOGLE_CREDENTIALS env var: {e}")
+                flow = InstalledAppFlow.from_client_config(info, SCOPES)
 
+            creds = flow.run_local_server(port=0)
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+
+    return build('calendar', 'v3', credentials=creds)
 
 
 def get_available_slots(date: str, duration: int = 60):
     try:
         service = get_calendar_service()
         tz = pytz.timezone('Asia/Kolkata')
-        
-        # Parse date and set time bounds (proper timezone handling)
+
+        # Parse date and time range
         naive_date = datetime.strptime(date, '%Y-%m-%d')
         start_date = tz.localize(naive_date.replace(hour=0, minute=0, second=0))
         end_date = tz.localize(naive_date.replace(hour=23, minute=59, second=59))
-        
-        # Format time bounds correctly for API
+
         time_min = start_date.isoformat()
         time_max = end_date.isoformat()
 
@@ -55,8 +71,8 @@ def get_available_slots(date: str, duration: int = 60):
 
         while current_time < end_date:
             slot_end = current_time + timedelta(minutes=duration)
-            
-            # Skip non-hourly slots if you want only exact hours
+
+            # Round to full hour
             if current_time.minute != 0:
                 current_time = current_time.replace(minute=0) + timedelta(hours=1)
                 continue
@@ -65,13 +81,14 @@ def get_available_slots(date: str, duration: int = 60):
             for event in events:
                 event_start = event['start'].get('dateTime') or event['start'].get('date')
                 event_end = event['end'].get('dateTime') or event['end'].get('date')
-                
-                if 'date' in event['start']:  # All-day event
+
+                if 'date' in event['start']:
+                    # All-day event
                     event_date = datetime.strptime(event_start, '%Y-%m-%d').date()
                     if event_date == start_date.date():
                         is_available = False
                         break
-                else:  # Timed event
+                else:
                     event_start_dt = datetime.fromisoformat(event_start.replace('Z', '+00:00')).astimezone(tz)
                     event_end_dt = datetime.fromisoformat(event_end.replace('Z', '+00:00')).astimezone(tz)
                     if not (slot_end <= event_start_dt or current_time >= event_end_dt):
@@ -80,7 +97,7 @@ def get_available_slots(date: str, duration: int = 60):
 
             if is_available:
                 available_slots.append(current_time.strftime('%H:%M'))
-            
+
             current_time += timedelta(hours=1)
 
         return available_slots
@@ -90,31 +107,17 @@ def get_available_slots(date: str, duration: int = 60):
     except Exception as e:
         return {"error": f"Error checking availability: {str(e)}"}
 
+
 def book_appointment(start_time: str, summary: str, duration: int = 60):
     try:
         service = get_calendar_service()
         tz = pytz.timezone('Asia/Kolkata')
-        
-        # Strict time parsing with validation
-        try:
-            naive_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M')
-            if not (0 <= naive_dt.hour < 24 and 0 <= naive_dt.minute < 60):
-                return {"error": "Invalid time - must be between 00:00 and 23:59"}
-                
-            start_dt = tz.localize(naive_dt.replace(
-                minute=0,  # Force exact hour
-                second=0,
-                microsecond=0
-            ))
-        except ValueError as e:
-            return {"error": f"Invalid time format: {str(e)}"}
 
-        # Calculate end time (strict 1-hour duration)
-        end_dt = start_dt + timedelta(hours=1)  # Changed from minutes=duration for exact hours
+        # Parse and validate datetime
+        naive_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M')
+        start_dt = tz.localize(naive_dt.replace(minute=0, second=0, microsecond=0))
+        end_dt = start_dt + timedelta(minutes=duration)
 
-        # Verify times
-        print(f"DEBUG: Booking from {start_dt} to {end_dt}")  # For verification
-        
         event = {
             'summary': summary,
             'start': {
@@ -130,21 +133,14 @@ def book_appointment(start_time: str, summary: str, duration: int = 60):
             }
         }
 
-        created_event = service.events().insert(
-            calendarId='primary',
-            body=event
-        ).execute()
+        created_event = service.events().insert(calendarId='primary', body=event).execute()
 
-        # Verify the actual booked times
-        booked_start = datetime.fromisoformat(created_event['start']['dateTime']).astimezone(tz)
-        booked_end = datetime.fromisoformat(created_event['end']['dateTime']).astimezone(tz)
-        
         return {
             "status": "success",
             "event_id": created_event.get('id'),
-            "start": booked_start.strftime('%Y-%m-%d %H:%M'),
-            "end": booked_end.strftime('%Y-%m-%d %H:%M'),
-            "duration_hours": (booked_end - booked_start).total_seconds() / 3600
+            "start": start_dt.strftime('%Y-%m-%d %H:%M'),
+            "end": end_dt.strftime('%Y-%m-%d %H:%M'),
+            "duration_hours": (end_dt - start_dt).total_seconds() / 3600
         }
 
     except HttpError as e:
