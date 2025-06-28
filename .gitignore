@@ -1,0 +1,14 @@
+.env
+venv/
+__init__.py
+
+credentials.json
+notes.ipynb
+structure.txt
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+# Ignore Jupyter Notebook checkpoints      
+token.json
