@@ -132,86 +132,62 @@ def check_availability(state: AgentState) -> AgentState:
 
 def book_slot(state: AgentState) -> AgentState:
     if not state["date"]:
-        state["messages"].append("I need to know the date for your appointment. Could you specify that first?")
+        state["messages"].append("Please specify a date first.")
         return state
     
     if not state["time"]:
-        if state["retry_count"] > 2:
-            state["messages"].append("I'm having trouble understanding the time. Could you please specify a time like '2pm', '14:00', or 'in the morning'?")
-            return state
-        
-        state["messages"].append("What time would you like to book? (e.g., '2pm', '14:00', or 'in the morning')")
+        state["messages"].append("What time would you like to book?")
         return state
     
-    # Validate time format
+    # Parse the requested time
     try:
-        datetime.strptime(state["time"], '%H:%M')
+        requested_time = datetime.strptime(f"{state['date']} {state['time']}", '%Y-%m-%d %H:%M')
     except ValueError:
-        state["messages"].append("That time format doesn't look right. Please use formats like '2pm', '14:00', or 'in the morning'.")
-        state["time"] = None
+        state["messages"].append("Invalid time format. Please use HH:MM format.")
         return state
     
+    # Check availability
     slots = get_available_slots(state["date"])
     if isinstance(slots, dict) and "error" in slots:
-        state["messages"].append(f"Sorry, I couldn't check availability: {slots['error']}")
+        state["messages"].append(f"Error checking availability: {slots['error']}")
         return state
     
-    if state["time"] not in slots:
-        # Find the closest available time
-        target_h, target_m = map(int, state["time"].split(':'))
-        target_min = target_h * 60 + target_m
-        
-        closest_slot = None
-        min_diff = float('inf')
-        
-        for slot in slots:
-            h, m = map(int, slot.split(':'))
-            slot_min = h * 60 + m
-            diff = abs(slot_min - target_min)
-            
-            if diff < min_diff:
-                min_diff = diff
-                closest_slot = slot
-        
-        if closest_slot:
-            state["messages"].append(
-                f"Sorry, {state['time']} isn't available on {state['date']}. "
-                f"The closest available time is {closest_slot}. Would you like to book that instead? "
-                f"(Or say 'no' to choose another time)"
-            )
-            # Store the suggested time for easy confirmation
-            state["suggested_time"] = closest_slot
-        else:
-            state["messages"].append(
-                f"Sorry, {state['time']} isn't available on {state['date']} and I couldn't find a close alternative. "
-                f"Would you like to try another time or day?"
-            )
-        return state
+    # Convert available slots to datetime objects for comparison
+    available_times = [
+        datetime.strptime(f"{state['date']} {slot}", '%Y-%m-%d %H:%M')
+        for slot in slots
+    ]
     
-    # If we get here, the slot is available
-    start_time = f"{state['date']} {state['time']}"
-    result = book_appointment(start_time, summary="Meeting")
-    
-    if "error" in result:
-        state["messages"].append(f"❌ Failed to book: {result['error']}")
+    # Find exact or nearest available slot
+    if requested_time in available_times:
+        # Exact match available
+        result = book_appointment(f"{state['date']} {state['time']}", "Meeting")
     else:
-        # Verify the booked time matches requested time
-        booked_start = datetime.datetime.strptime(result['start'], '%Y-%m-%d %H:%M')
-        requested_start = datetime.datetime.strptime(start_time, '%Y-%m-%d %H:%M')
+        # Find nearest available time
+        time_diffs = [(abs((rt - requested_time).total_seconds()), rt) for rt in available_times]
+        time_diffs.sort()
+        closest_time = time_diffs[0][1] if time_diffs else None
         
-        if booked_start != requested_start:
+        if closest_time:
             state["messages"].append(
-                f"⚠️ Warning: Calendar system adjusted our booking time.\n"
-                f"Requested: {requested_start.strftime('%I:%M %p')}\n"
-                f"Booked: {booked_start.strftime('%I:%M %p')}\n"
-                f"Should we try again or pick another time?"
+                f"Sorry, {state['time']} isn't available. "
+                f"The closest available time is {closest_time.strftime('%H:%M')}. "
+                f"Would you like to book that instead?"
             )
+            state["suggested_time"] = closest_time.strftime('%H:%M')
+            return state
         else:
-            state["messages"].append(
-                f"✅ Confirmed! Booked exactly at {booked_start.strftime('%I:%M %p')} "
-                f"on {booked_start.strftime('%A, %B %d')}."
-            )
-            state["confirmed"] = True
+            state["messages"].append("No available slots for that day.")
+            return state
+    
+    # Handle booking result
+    if "error" in result:
+        state["messages"].append(f"Booking failed: {result['error']}")
+    else:
+        state["messages"].append(
+            f"✅ Booked successfully at {result['start']}!"
+        )
+        state["confirmed"] = True
     
     return state
 
@@ -229,8 +205,8 @@ def router(state: AgentState) -> str:
     if state["confirmed"]:
         return END
     
-    # Check for confirmation of suggested time
-    if "suggested_time" in state and state["messages"][-1].lower() in ["yes", "y", "ok", "sure"]:
+    # Handle suggested time confirmations
+    if "suggested_time" in state and state["messages"][-1].lower() in ["yes", "y", "ok"]:
         state["time"] = state["suggested_time"]
         del state["suggested_time"]
         return "book_slot"
