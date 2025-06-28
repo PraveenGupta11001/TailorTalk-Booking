@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Try backend URL from env first, fallback to localhost
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACK-END_URL", "http://localhost:8000")
 
 def send_message(message):
     try:

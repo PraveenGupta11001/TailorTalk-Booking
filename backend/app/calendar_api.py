@@ -8,11 +8,16 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from dotenv import load_dotenv
+load_dotenv()
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 
 def decode_and_write_file(env_var_name, filename):
+    """
+    Decode a base64 environment variable and write it to a file.
+    """
     data = os.getenv(env_var_name)
     if not data:
         raise Exception(f"{env_var_name} not set in environment.")
@@ -22,11 +27,21 @@ def decode_and_write_file(env_var_name, filename):
 
 
 def get_calendar_service():
-    decode_and_write_file("GOOGLE_CREDENTIALS_BASE64", "credentials.json")
-    decode_and_write_file("GOOGLE_TOKEN_BASE64", "token.json")
+    """
+    Returns an authenticated Google Calendar service instance.
+    Automatically detects local or deployed mode.
+    """
+    # Use env-based credentials if available (Railway or any cloud)
+    if os.getenv("GOOGLE_CREDENTIALS_BASE64") and os.getenv("GOOGLE_TOKEN_BASE64"):
+        decode_and_write_file("GOOGLE_CREDENTIALS_BASE64", "credentials.json")
+        decode_and_write_file("GOOGLE_TOKEN_BASE64", "token.json")
+    elif not os.path.exists("credentials.json") or not os.path.exists("token.json"):
+        raise Exception("Missing credentials.json or token.json for local mode.")
 
+    # Load credentials
     creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
+    # Refresh if expired
     if not creds.valid:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -37,11 +52,14 @@ def get_calendar_service():
 
 
 def get_available_slots(date: str, duration: int = 60):
+    """
+    Given a date string (YYYY-MM-DD), return available hourly slots.
+    """
     try:
         service = get_calendar_service()
         tz = pytz.timezone('Asia/Kolkata')
 
-        # Full day range
+        # Define full day range
         naive_date = datetime.strptime(date, '%Y-%m-%d')
         start_date = tz.localize(naive_date.replace(hour=0, minute=0, second=0))
         end_date = tz.localize(naive_date.replace(hour=23, minute=59, second=59))
@@ -61,7 +79,7 @@ def get_available_slots(date: str, duration: int = 60):
         while current_time < end_date:
             slot_end = current_time + timedelta(minutes=duration)
 
-            # Only check full hour slots
+            # Only allow slots starting at the hour
             if current_time.minute != 0:
                 current_time = current_time.replace(minute=0) + timedelta(hours=1)
                 continue
@@ -97,11 +115,13 @@ def get_available_slots(date: str, duration: int = 60):
 
 
 def book_appointment(start_time: str, summary: str, duration: int = 60):
+    """
+    Book an appointment at the specified start_time (YYYY-MM-DD HH:MM).
+    """
     try:
         service = get_calendar_service()
         tz = pytz.timezone('Asia/Kolkata')
 
-        # Parse and round time
         naive_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M')
         start_dt = tz.localize(naive_dt.replace(minute=0, second=0, microsecond=0))
         end_dt = start_dt + timedelta(minutes=duration)
